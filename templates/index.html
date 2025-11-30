@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nepal Audio Classifier - संगीत वर्गीकरण</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="mandala-bg"></div>
+    
+    <header>
+        <div class="header-content">
+            
+            <h1>🎵 Audio Genre Classifier 🎵</h1>
+            <p class="nepali-text">संगीत शैली पहिचानकर्ता</p>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="card">
+            <div class="card-header">
+                <h2>Upload Your Audio</h2>
+                <p>Drop your audio file to discover its genre</p>
+            </div>
+            
+            <div class="upload-section">
+                <div class="upload-area" id="uploadArea">
+                    <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <p class="upload-text">Drag & Drop your audio file here</p>
+                    <p class="upload-subtext">or click to browse</p>
+                    <input type="file" id="audioInput" accept="audio/*" hidden>
+                    <button class="browse-btn" onclick="document.getElementById('audioInput').click()">Browse Files</button>
+                </div>
+                
+                <div id="fileName" class="file-name"></div>
+            </div>
+
+            <button id="classifyBtn" class="classify-btn" disabled>
+                <span>Classify Genre</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+            </button>
+        </div>
+
+        <div id="resultsSection" class="results-section" style="display: none;">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Classification Results</h2>
+                </div>
+                
+                <div class="result-content">
+                    <div class="main-result">
+                        <div class="genre-badge">
+                            <span class="genre-label">Detected Genre:</span>
+                            <span id="mainGenre" class="genre-name">-</span>
+                        </div>
+                        <div class="confidence-container">
+                            <div class="confidence-label">Confidence</div>
+                            <div class="confidence-bar">
+                                <div id="confidenceBar" class="confidence-fill"></div>
+                            </div>
+                            <div id="confidenceText" class="confidence-text">0%</div>
+                        </div>
+                    </div>
+
+                    <div class="predictions-grid">
+                        <h3>Top Predictions</h3>
+                        <div id="topPredictions"></div>
+                    </div>
+
+                    <div class="spectrogram-container">
+                        <h3>Mel Spectrogram</h3>
+                        <img id="spectrogramImg" src="" alt="Spectrogram">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="loadingSpinner" class="loading-spinner" style="display: none;">
+            <div class="spinner"></div>
+            <p>Analyzing your audio...</p>
+        </div>
+    </main>
+
+
+    <script>
+        const uploadArea = document.getElementById('uploadArea');
+        const audioInput = document.getElementById('audioInput');
+        const fileName = document.getElementById('fileName');
+        const classifyBtn = document.getElementById('classifyBtn');
+        const resultsSection = document.getElementById('resultsSection');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        let selectedFile = null;
+
+        // Drag and drop functionality
+        uploadArea.addEventListener('click', () => audioInput.click());
+        
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('drag-over');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('drag-over');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('drag-over');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFileSelect(files[0]);
+            }
+        });
+
+        audioInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileSelect(e.target.files[0]);
+            }
+        });
+
+        function handleFileSelect(file) {
+            if (file.type.startsWith('audio/')) {
+                selectedFile = file;
+                fileName.textContent = `Selected: ${file.name}`;
+                fileName.style.display = 'block';
+                classifyBtn.disabled = false;
+            } else {
+                alert('Please select a valid audio file');
+            }
+        }
+
+        classifyBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            const formData = new FormData();
+            formData.append('audio', selectedFile);
+
+            loadingSpinner.style.display = 'block';
+            resultsSection.style.display = 'none';
+            classifyBtn.disabled = true;
+
+            try {
+                const response = await fetch('/classify', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    displayResults(data);
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error classifying audio: ' + error.message);
+            } finally {
+                loadingSpinner.style.display = 'none';
+                classifyBtn.disabled = false;
+            }
+        });
+
+        function displayResults(data) {
+            document.getElementById('mainGenre').textContent = data.genre.toUpperCase();
+            document.getElementById('confidenceText').textContent = data.confidence.toFixed(2) + '%';
+            document.getElementById('confidenceBar').style.width = data.confidence + '%';
+            
+            // Display top predictions
+            const topPredictions = document.getElementById('topPredictions');
+            topPredictions.innerHTML = data.top_predictions.map((pred, index) => `
+                <div class="prediction-item">
+                    <div class="prediction-rank">#${index + 1}</div>
+                    <div class="prediction-info">
+                        <div class="prediction-genre">${pred.genre.toUpperCase()}</div>
+                        <div class="prediction-bar-container">
+                            <div class="prediction-bar" style="width: ${pred.confidence}%"></div>
+                        </div>
+                        <div class="prediction-confidence">${pred.confidence.toFixed(2)}%</div>
+                    </div>
+                </div>
+            `).join('');
+
+            // Display spectrogram
+            document.getElementById('spectrogramImg').src = data.spectrogram;
+
+            resultsSection.style.display = 'block';
+            resultsSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    </script>
+</body>
+</html>
